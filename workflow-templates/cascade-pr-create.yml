@@ -1,8 +1,10 @@
-name: Create cascade rc pull request
+name: Create cascade rc pull request 
 on:
   push:
     branches:
       - rc/*
+      - main
+      - hotfix/*
 jobs:
   createOrUpdatePr:
     runs-on: ubuntu-latest
