@@ -1,0 +1,77 @@
+name: Create cascade rc pull request
+on:
+  push:
+    branches:
+      - rc/*
+jobs:
+  createOrUpdatePr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo context
+        run: cat $GITHUB_EVENT_PATH
+      - uses: actions/checkout@v2
+        with:
+          path: main-repo
+          fetch-depth: 0
+      - uses: actions/checkout@v2
+        with:
+          repository: Securrency/InfrastructureTools
+          token: ${{ secrets.TOKEN }}
+          path: tools
+          ref: dev
+      - uses: bahmutov/npm-install@v1
+        with:
+          working-directory: ./tools/github-actions/rc-branches/
+      - run: npm install @actions/core @actions/github
+        working-directory: ./tools/github-actions/rc-branches/
+      - name: Suggest cascade merge info
+        id: suggest_cascade_merge_info
+        run: node ./set-cascade-merge-info-parameters.js ../../../main-repo
+        working-directory: ./tools/github-actions/rc-branches/
+      - name: Echo suggested merge info
+        run: |
+          echo "should_merge: ${{ steps.suggest_cascade_merge_info.outputs.should_merge }}"
+          echo "target_branch: ${{ steps.suggest_cascade_merge_info.outputs.target_branch }}"
+          echo "source_branch: ${{ steps.suggest_cascade_merge_info.outputs.source_branch }}"
+      - name: check if pull request exists
+        id: check_pr_exists
+        uses: actions/github-script@v2
+        with:
+          script: |
+            const filter = {
+              repo: context.repo.repo,
+              owner: context.repo.owner,
+              state: 'open',
+              head: 'Securrency:${{ steps.suggest_cascade_merge_info.outputs.source_branch }}',
+              base: '${{ steps.suggest_cascade_merge_info.outputs.target_branch }}'
+            };
+            const {data: pulls} = await github.pulls.list(filter);
+            if(pulls.length > 0){
+              console.log(`PR already exists  ${pulls[0].url}`);
+              core.setOutput('pr_exists', 'true');
+            }
+            else{
+              console.log('No existing PR found (else)');
+              core.setOutput('pr_exists', 'false');
+            }
+      - name: Create pull request
+        uses: thomaseizinger/create-pull-request@master
+        if: ${{ steps.suggest_cascade_merge_info.outputs.should_merge == 'true' && steps.check_pr_exists.outputs.pr_exists != 'true' }}
+        id: create_pr
+        with:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          head: ${{ steps.suggest_cascade_merge_info.outputs.source_branch }}
+          base: ${{ steps.suggest_cascade_merge_info.outputs.target_branch }}
+          title: Sync ${{ steps.suggest_cascade_merge_info.outputs.source_branch }} to ${{ steps.suggest_cascade_merge_info.outputs.target_branch }}
+      - name: Enable Auto-merge
+        uses: peter-evans/enable-pull-request-automerge@v1
+        if: steps.create_pr.outputs.number != ''
+        with:
+          token: ${{ secrets.TOKEN }}
+          pull-request-number: ${{ steps.create_pr.outputs.number }}
+      - name: Auto approve
+        uses: juliangruber/approve-pull-request-action@v1
+        if: steps.create_pr.outputs.number != ''
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ steps.create_pr.outputs.number }}

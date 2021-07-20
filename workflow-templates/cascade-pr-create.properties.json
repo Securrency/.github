@@ -1,0 +1,4 @@
+{
+    "name": "Cascade RC pull requests workflow",
+    "description": "Template to create cascade pull requests to sync release candidate branches."
+}
